@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 번역기</title>
+    <!-- Tailwind CSS CDN 로드 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 기본 글꼴 설정 */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #e5e7eb; /* 밝은 슬레이트 색상 배경 */
+        }
+        /* 대상 언어 입력란에 포커스 효과 제거 */
+        #outputText {
+            cursor: default;
+        }
+        /* 앱 컨테이너의 최소 높이 설정 */
+        #app {
+             min-height: 80vh; 
+        }
+        /* 텍스트 영역의 부모 요소를 relative로 설정하여 버튼과 파일 입력을 제어 */
+        #sourceContainer {
+            position: relative;
+        }
+        /* 커스텀 그림자 (모던한 느낌을 위해) */
+        .shadow-custom {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        /* 메인 버튼 스타일링을 위한 그라디언트 정의 */
+        .btn-primary {
+            background-image: linear-gradient(to right, #10b981, #059669); /* emerald-500 to emerald-600 */
+        }
+        .btn-primary:hover {
+            background-image: linear-gradient(to right, #059669, #10b981);
+        }
+        .btn-secondary {
+            background-image: linear-gradient(to right, #6366f1, #4f46e5); /* indigo-500 to indigo-600 */
+        }
+        .btn-secondary:hover {
+             background-image: linear-gradient(to right, #4f46e5, #6366f1);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <!-- 창 크기를 max-w-5xl로 확장 -->
+    <div id="app" class="w-full max-w-5xl bg-white shadow-2xl rounded-2xl p-8 space-y-8 shadow-custom">
+        <h1 class="text-4xl font-extrabold text-gray-900 text-center mb-6 tracking-tight">
+            🌐 실시간 번역기 | CHOI.LAB
+        </h1>
+        
+        <!-- API Key Input Section (환경 변수가 없거나 로컬 파일 실행 시에만 표시됩니다.) -->
+        <div id="apiKeySection" class="p-4 bg-yellow-50 border border-yellow-300 rounded-xl mb-4 hidden">
+            <label for="apiKeyInput" class="block text-sm font-medium text-yellow-800 mb-2">
+                ⚠️ **Gemini API Key 입력** (번역을 위해 필수)
+            </label>
+            <div class="flex space-x-2 mb-2">
+                <input type="password" id="apiKeyInput" class="flex-1 p-2 border border-gray-300 rounded-lg text-sm focus:ring-yellow-500 focus:border-yellow-500" placeholder="여기에 API 키를 붙여넣으세요">
+                <button id="saveApiKeyBtn" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-semibold rounded-lg transition transform hover:scale-[1.02] active:scale-[0.98]">
+                    저장
+                </button>
+            </div>
+            
+            <!-- API 키 발급 페이지로 이동 버튼 추가 -->
+            <button id="getApiKeyBtn" class="w-full px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold rounded-lg transition transform hover:scale-[1.005]">
+                🚀 API 키 발급 페이지로 이동
+            </button>
+            <p id="apiKeyStatus" class="mt-2 text-xs text-yellow-700">API 키가 저장되지 않았습니다.</p>
+        </div>
+        
+        <!-- 언어 선택 및 방향 전환 섹션 -->
+        <div class="flex items-center justify-between space-x-4 mb-6">
+            <!-- Source Language -->
+            <select id="sourceLang" class="flex-1 p-3 border border-gray-300 rounded-xl text-lg bg-white shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 ease-in-out">
+                <option value="auto" selected>자동 감지 (Auto-Detect)</option>
+                <option value="ko">한국어 (Korean)</option>
+                <option value="en">영어 (English)</option>
+                <option value="zh">중국어 (Chinese)</option>
+                <option value="ja">일본어 (Japanese)</option>
+                <option value="es">스페인어 (Spanish)</option>
+            </select>
+
+            <!-- Swap Button -->
+            <button id="swapBtn" class="p-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-full shadow-lg transition duration-200 ease-in-out transform hover:scale-110 active:scale-95 disabled:opacity-50" title="언어 전환">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+            </button>
+            
+            <!-- Target Language -->
+            <select id="targetLang" class="flex-1 p-3 border border-gray-300 rounded-xl text-lg bg-white shadow-sm focus:ring-indigo-500 focus:border-indigo-500 transition duration-200 ease-in-out">
+                <option value="ko" selected>한국어 (Korean)</option>
+                <option value="en">영어 (English)</option>
+                <option value="zh">중국어 (Chinese)</option>
+                <option value="ja">일본어 (Japanese)</option>
+                <option value="es">스페인어 (Spanish)</option>
+            </select>
+        </div>
+
+        <!-- 입력 및 출력 텍스트 영역 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 입력 텍스트 및 이미지 영역 통합 -->
+            <div id="sourceContainer">
+                <label for="inputText" class="block text-sm font-medium text-gray-700 mb-2">
+                    원문 (Source Text) <span class="text-xs text-indigo-500 font-normal ml-2">(Ctrl+V 이미지 붙여넣기 가능)</span>
+                </label>
+                
+                <!-- Hidden file input for programmatically triggering file selection -->
+                <input type="file" id="imageInput" accept="image/*" class="hidden"> 
+                
+                <!-- Image Preview Container -->
+                <div id="imagePreviewContainer" class="mb-3 hidden p-3 border-2 border-dashed border-indigo-400 bg-indigo-50 rounded-xl">
+                    <p class="text-xs font-medium text-indigo-700 mb-2">📸 이미지 미리보기:</p>
+                    <img id="imagePreview" class="max-w-full h-auto rounded-lg shadow-md object-contain max-h-48 mx-auto" alt="Image Preview">
+                    <button id="removeImageBtn" class="mt-3 w-full px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-lg transition transform hover:scale-[1.01] active:scale-[0.99] shadow-md">이미지 제거</button>
+                </div>
+                
+                <!-- The actual Text Area (now also the paste target for images) -->
+                <textarea id="inputText" rows="8" class="w-full p-4 border border-gray-300 rounded-xl shadow-inner focus:ring-indigo-500 focus:border-indigo-500 resize-none transition duration-200 ease-in-out placeholder-gray-400" placeholder="여기에 번역할 텍스트를 입력하거나 이미지를 붙여넣으세요."></textarea>
+                
+                <!-- File Select Button - linked to the hidden imageInput -->
+                <button id="selectFileBtn" class="mt-3 w-full px-3 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-sm font-semibold rounded-xl shadow-md transition transform hover:scale-[1.005]">
+                    📁 이미지 파일 선택
+                </button>
+            </div>
+            
+            <!-- 출력 텍스트 영역 -->
+            <div>
+                <label for="outputText" class="block text-sm font-medium text-gray-700 mb-2">번역문 (Translated Text)</label>
+                <div id="outputText" class="w-full h-full p-4 border border-gray-300 rounded-xl bg-gray-100 min-h-[18rem] overflow-auto transition duration-200 ease-in-out text-gray-800 shadow-inner">
+                    번역 결과가 여기에 표시됩니다.
+                </div>
+            </div>
+        </div>
+
+        <!-- 번역, 초기화, 히스토리 버튼 및 상태 메시지 -->
+        <div class="flex flex-col sm:flex-row items-center justify-between pt-4">
+            <div class="flex space-x-3 w-full sm:w-auto"> <!-- Wrap buttons in a container -->
+                <button id="translateBtn" class="flex-1 px-4 py-2 whitespace-nowrap btn-primary text-white font-bold rounded-xl shadow-xl transition duration-200 ease-in-out transform hover:scale-[1.03] active:scale-[0.98] disabled:opacity-50">
+                    번역하기
+                </button>
+                <button id="clearBtn" class="flex-1 px-4 py-2 whitespace-nowrap bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold rounded-xl shadow-md transition duration-200 ease-in-out transform hover:scale-[1.03] active:scale-[0.98]">
+                    초기화
+                </button>
+                <button id="historyBtn" class="flex-1 px-4 py-2 whitespace-nowrap btn-secondary text-white font-semibold rounded-xl shadow-xl transition duration-200 ease-in-out transform hover:scale-[1.03] active:scale-[0.98]">
+                    📊 히스토리
+                </button>
+            </div>
+
+            <!-- 로딩 및 에러 메시지 -->
+            <div id="statusMessage" class="mt-4 sm:mt-0 text-lg text-center font-medium text-gray-600 flex items-center space-x-2">
+                <span>번역할 내용을 입력하고 버튼을 누르세요.</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Modal -->
+    <div id="historyModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 hidden items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6 space-y-4">
+            <h2 class="text-3xl font-bold text-gray-900 border-b pb-2">번역 기록 (Translation History)</h2>
+            <div id="historyContent" class="space-y-6">
+                <!-- History items will be inserted here -->
+            </div>
+            <div class="flex space-x-4 mt-4">
+                <button id="closeHistoryBtn" class="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition shadow-lg">
+                    닫기
+                </button>
+                <button id="clearHistoryBtn" class="flex-1 px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded-lg transition shadow-lg">
+                    기록 전체 삭제
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Gemini API 호출을 위한 기본 설정
+        const MODEL_NAME = 'gemini-2.5-flash-preview-09-2025';
+        
+        // 1. 환경 변수에서 API 키 추출 시도 (__initial_api_key는 캔버스 환경에서 제공되는 전역 변수)
+        const canvasApiKey = typeof __initial_api_key !== 'undefined' ? __initial_api_key : '';
+        
+        // 2. localStorage에서 키를 불러옴 (로컬 파일 실행 시 사용)
+        let userApiKey = localStorage.getItem('geminiApiKey') || ""; 
+
+        // 최종 사용할 API 키 결정 (캔버스 키 > 로컬 저장 키)
+        if (canvasApiKey) {
+            userApiKey = canvasApiKey;
+        }
+
+        // DOM 요소 가져오기
+        const inputTextarea = document.getElementById('inputText');
+        const outputDiv = document.getElementById('outputText');
+        const sourceLangSelect = document.getElementById('sourceLang');
+        const targetLangSelect = document.getElementById('targetLang');
+        const translateBtn = document.getElementById('translateBtn');
+        const swapBtn = document.getElementById('swapBtn');
+        const clearBtn = document.getElementById('clearBtn'); 
+        const historyBtn = document.getElementById('historyBtn'); 
+        const statusMessage = document.getElementById('statusMessage');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreviewContainer = document.getElementById('imagePreviewContainer');
+        const imagePreview = document.getElementById('imagePreview');
+        const removeImageBtn = document.getElementById('removeImageBtn');
+        const selectFileBtn = document.getElementById('selectFileBtn'); 
+        
+        // API Key Elements
+        const apiKeySection = document.getElementById('apiKeySection'); // 섹션 전체를 가져옴
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const saveApiKeyBtn = document.getElementById('saveApiKeyBtn');
+        const getApiKeyBtn = document.getElementById('getApiKeyBtn'); // 추가된 버튼
+        const apiKeyStatus = document.getElementById('apiKeyStatus');
+        
+        // History Modal Elements
+        const historyModal = document.getElementById('historyModal');
+        const historyContent = document.getElementById('historyContent');
+        const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+        const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+        // 언어 코드 매핑 (사용자에게 표시할 이름)
+        const langMap = {
+            'ko': '한국어',
+            'en': '영어',
+            'zh': '중국어',
+            'ja': '일본어',
+            'es': '스페인어',
+            'auto': '자동 감지'
+        };
+
+        // Global state
+        let imageB64Data = null;
+        let imageMimeType = null;
+        let translationHistory = []; // 번역 기록 저장 배열
+
+        // --- Utility Functions ---
+        
+        // API 키 상태 업데이트 함수
+        function updateApiKeyStatus() {
+            if (canvasApiKey) {
+                // 캔버스 환경에서 키가 제공되면, 사용자에게 이 사실을 알림
+                apiKeySection.classList.add('hidden');
+            } else if (userApiKey) {
+                // 로컬 환경에서 localStorage 키가 있으면
+                // 메시지를 수정하여 키가 저장되어 유지된다는 것을 명확히 표시
+                apiKeyStatus.textContent = "✅ API 키가 브라우저에 저장되어 유지됩니다. (***" + userApiKey.slice(-4) + ")";
+                apiKeyStatus.classList.remove('text-yellow-700', 'text-red-500');
+                apiKeyStatus.classList.add('text-green-700');
+                apiKeyInput.value = '********';
+            } else {
+                // 키가 없으면 사용자에게 입력 요청
+                apiKeySection.classList.remove('hidden');
+                apiKeyStatus.textContent = "❌ API 키를 발급받아 입력 후 저장해주세요.";
+                apiKeyStatus.classList.remove('text-green-700');
+                apiKeyStatus.classList.add('text-red-500');
+            }
+            checkLanguageSelection(); // 키 상태에 따라 버튼 활성화/비활성화
+        }
+        
+        // 상태 UI 업데이트 함수
+        function updateStatus(message, isLoading = false, isError = false) {
+            statusMessage.innerHTML = isLoading 
+                ? `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>${message}</span>`
+                : `<span>${message}</span>`;
+            statusMessage.classList.toggle('text-red-500', isError);
+            statusMessage.classList.toggle('text-gray-600', !isError && !isLoading);
+            // 번역 버튼 활성화/비활성화 로직은 checkLanguageSelection에서 처리
+        }
+
+        /**
+         * 지수 백오프를 사용하여 API 호출을 시도합니다.
+         * @param {object} payload - API에 전송할 페이로드
+         */
+        async function fetchWithBackoff(payload, maxRetries = 3) {
+            const currentApiKey = userApiKey || canvasApiKey;
+            if (!currentApiKey) {
+                throw new Error("API Key가 설정되지 않았습니다. 키를 입력하고 저장해주세요.");
+            }
+            
+            const currentApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${currentApiKey}`;
+            
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    const response = await fetch(currentApiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) {
+                        return response.json();
+                    }
+
+                    if (response.status === 429 || response.status >= 500) {
+                        if (attempt === maxRetries - 1) {
+                            throw new Error(`API 호출 실패: ${response.status} ${response.statusText}`);
+                        }
+                        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+
+                    const errorJson = await response.json().catch(() => ({}));
+                    const errorMessage = errorJson.error?.message || response.statusText;
+                    throw new Error(`API 호출 오류: ${response.status} - ${errorMessage}`);
+
+                } catch (error) {
+                    if (attempt === maxRetries - 1) {
+                        throw error;
+                    }
+                    const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            throw new Error("최대 재시도 횟수 초과");
+        }
+        
+        // File/blob을 Base64로 변환하는 함수
+        function fileToGenerativePart(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64Data = reader.result.split(',')[1]; 
+                    resolve({
+                        inlineData: {
+                            data: base64Data,
+                            mimeType: file.type
+                        }
+                    });
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 이미지 제거 로직
+        function removeImage() {
+            imageB64Data = null;
+            imageMimeType = null;
+            imageInput.value = '';
+            imagePreview.src = '';
+            imagePreviewContainer.classList.add('hidden');
+            
+            const defaultPrompt = "이미지에서 텍스트를 추출해 번역해줘.";
+            if (inputTextarea.value.trim() === defaultPrompt) {
+                 inputTextarea.value = "";
+            }
+            
+            checkLanguageSelection();
+        }
+        
+        // 입력 내용 및 이미지 초기화 함수
+        function clearInput() {
+            inputTextarea.value = "";
+            outputDiv.textContent = "번역 결과가 여기에 표시됩니다.";
+            if (imageB64Data) {
+                removeImage(); // 이미지가 있으면 이미지도 제거
+            } else {
+                checkLanguageSelection();
+            }
+            translateBtn.disabled = true;
+            updateStatus("번역할 내용을 입력하고 버튼을 누르세요.");
+        }
+
+
+        // 이미지 파일/Blob을 처리하고 UI를 업데이트하는 함수
+        async function processImage(file) {
+            updateStatus("이미지 처리 중...", true);
+            try {
+                // 기존 이미지가 있다면 제거
+                if (imageB64Data) {
+                    removeImage();
+                }
+
+                // 1. Convert file/blob to Base64 part
+                const part = await fileToGenerativePart(file);
+                imageB64Data = part.inlineData.data;
+                imageMimeType = part.inlineData.mimeType;
+                
+                // 2. Update UI preview
+                imagePreview.src = URL.createObjectURL(file);
+                imagePreviewContainer.classList.remove('hidden');
+                
+                // 3. Activate button and set default prompt if necessary
+                
+                const currentText = inputTextarea.value.trim();
+                const defaultPrompt = "이미지에서 텍스트를 추출해 번역해줘.";
+
+                if (currentText.length === 0 || currentText === defaultPrompt) {
+                    inputTextarea.value = defaultPrompt; 
+                }
+                
+                // 4. Reset file input to visually clear it if pasted or loaded
+                imageInput.value = ''; 
+                
+                checkLanguageSelection();
+                updateStatus("이미지가 성공적으로 로드되었습니다. 번역을 시작하세요.", false, false);
+            } catch (error) {
+                console.error("이미지 처리 오류:", error);
+                updateStatus("이미지 파일을 처리하는 데 실패했습니다.", false, true);
+                imageB64Data = null;
+                imageMimeType = null;
+                imageInput.value = '';
+            }
+        }
+
+        // Paste Event Handler: 클립보드에서 이미지 파일을 추출합니다.
+        function handlePaste(event) {
+            const items = (event.clipboardData || event.originalEvent.clipboardData).items;
+            let imageFound = false;
+            
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.startsWith('image/')) {
+                    const blob = items[i].getAsFile();
+                    if (blob) {
+                        event.preventDefault(); // 기본 붙여넣기 동작 방지
+                        imageFound = true;
+                        
+                        // 기존 이미지가 있다면 제거 후 새 이미지 처리
+                        processImage(blob);
+                        break;
+                    }
+                }
+            }
+
+            if (imageFound) {
+                 updateStatus("클립보드 이미지를 감지했습니다. 처리 중...", true);
+            }
+        }
+
+        // 언어 선택 상태 확인 및 버튼 활성화/비활성화
+        function checkLanguageSelection() {
+            const source = sourceLangSelect.value;
+            const target = targetLangSelect.value;
+            const hasInput = inputTextarea.value.trim().length > 0 || imageB64Data !== null;
+            
+            // API 키가 있는지 확인 (환경 변수 또는 로컬 저장소)
+            const isApiKeyValid = canvasApiKey || userApiKey;
+            
+            if (!isApiKeyValid) {
+                 updateStatus("❌ API 키를 먼저 입력하고 저장해야 합니다.", false, true);
+                 translateBtn.disabled = true;
+                 return;
+            }
+            
+            if (source !== 'auto' && source === target) {
+                 updateStatus(`소스 언어(${langMap[source]})와 대상 언어가 동일합니다. 언어를 변경하거나 '전환' 버튼을 사용하세요.`, false, true);
+                 translateBtn.disabled = true;
+            } else {
+                 if (!hasInput) {
+                    updateStatus("번역할 내용을 입력하거나 이미지를 업로드하고 버튼을 누르세요.");
+                    translateBtn.disabled = true;
+                 } else {
+                    updateStatus("번역을 시작할 준비가 되었습니다.", false, false);
+                    translateBtn.disabled = false;
+                 }
+            }
+            swapBtn.disabled = (source === 'auto');
+        }
+
+        // 히스토리에 번역 결과를 저장
+        function saveHistory(source, target, result) {
+            const historyItem = {
+                timestamp: new Date().toLocaleString(),
+                sourceLang: langMap[source] || source,
+                targetLang: langMap[target] || target,
+                sourceText: inputTextarea.value.trim(),
+                translatedText: result,
+                isImage: imageB64Data !== null,
+                imageURL: imageB64Data ? imagePreview.src : null // 미리보기 URL 저장
+            };
+            // 새 항목을 가장 앞에 추가
+            translationHistory.unshift(historyItem);
+        }
+        
+        // 히스토리 모달을 열고 기록을 표시
+        function showHistory() {
+            historyContent.innerHTML = ''; // 기존 내용 초기화
+            
+            if (translationHistory.length === 0) {
+                historyContent.innerHTML = '<p class="text-center text-gray-500 py-8">아직 번역 기록이 없습니다.</p>';
+            } else {
+                translationHistory.forEach((item, index) => {
+                    const historyItem = document.createElement('div');
+                    // 모달 내부 디자인도 업데이트 (더 부드러운 배경과 그림자)
+                    historyItem.className = 'p-4 border border-gray-100 rounded-xl shadow-md bg-gray-50 hover:bg-white transition duration-150';
+                    
+                    let contentHTML = `
+                        <div class="flex justify-between items-center text-sm text-gray-500 mb-2 border-b border-gray-200 pb-1">
+                            <span class="font-bold text-indigo-600">${item.sourceLang} → ${item.targetLang}</span>
+                            <span class="text-xs">${item.timestamp}</span>
+                        </div>
+                    `;
+                    
+                    if (item.isImage && item.imageURL) {
+                        contentHTML += `
+                            <div class="mb-3">
+                                <span class="text-sm font-medium text-gray-700">원문 이미지: </span>
+                                <img src="${item.imageURL}" class="max-w-full h-auto max-h-32 object-contain rounded-lg mt-1 border border-gray-300 shadow-sm" alt="Source Image">
+                            </div>
+                        `;
+                    }
+                    
+                    // 텍스트 스타일도 조금 더 깔끔하게
+                    contentHTML += `
+                        <div class="mb-3">
+                            <span class="text-sm font-semibold text-gray-700">원문: </span>
+                            <p class="text-gray-800 break-words max-h-20 overflow-hidden text-sm p-2 bg-white rounded-lg border border-gray-200">${item.sourceText}</p>
+                        </div>
+                        <div>
+                            <span class="text-sm font-semibold text-emerald-600">번역: </span>
+                            <p class="text-emerald-900 font-medium break-words max-h-20 overflow-hidden p-2 bg-emerald-50 rounded-lg border border-emerald-200">${item.translatedText}</p>
+                        </div>
+                    `;
+                    
+                    historyItem.innerHTML = contentHTML;
+                    historyContent.appendChild(historyItem);
+                });
+            }
+            
+            historyModal.classList.remove('hidden');
+            historyModal.classList.add('flex');
+        }
+
+        // --- Main Translation Function ---
+        async function translateText() {
+            const textToTranslate = inputTextarea.value.trim();
+            const sourceLang = sourceLangSelect.value;
+            const targetLang = targetLangSelect.value;
+            const targetLangName = langMap[targetLang] || targetLang;
+            let systemPrompt = '';
+            
+            if (!textToTranslate && !imageB64Data) return;
+            if (sourceLang !== 'auto' && sourceLang === targetLang) return; 
+            if (!userApiKey && !canvasApiKey) {
+                updateStatus("❌ API Key를 입력하고 저장해주세요.", false, true);
+                return;
+            }
+
+            updateStatus("번역 중...", true);
+            outputDiv.textContent = '번역 중...';
+            
+            const contents = [];
+            const isMultimodal = imageB64Data !== null;
+
+            if (imageB64Data) {
+                contents.push({
+                    inlineData: {
+                        mimeType: imageMimeType,
+                        data: imageB64Data
+                    }
+                });
+            }
+            
+            if (textToTranslate) {
+                contents.push({ parts: [{ text: textToTranslate }] });
+            }
+
+            // --- System Prompt Generation ---
+            const defaultPrompt = "이미지에서 텍스트를 추출해 번역해줘.";
+            if (isMultimodal) {
+                if (textToTranslate === defaultPrompt || !textToTranslate) {
+                    systemPrompt = `당신은 OCR 및 번역 전문가입니다. 주어진 이미지에서 텍스트를 추출하고, 그 텍스트를 정확하고 자연스럽게 ${targetLangName}(${targetLang})로 번역하세요. 번역된 텍스트만 응답하세요. 다른 설명이나 추가적인 문장을 포함하지 마세요.`;
+                } else if (sourceLang === 'auto') {
+                    systemPrompt = `당신은 OCR 및 번역 전문가입니다. 주어진 이미지와 텍스트를 모두 참고하여, 원본 언어를 자동으로 감지하고, 이 내용을 정확하고 자연스럽게 ${targetLangName}(${targetLang})로 번역하세요. 번역된 텍스트만 응답하세요. 다른 설명이나 추가적인 문장을 포함하지 마세요.`;
+                } else {
+                    const sourceLangName = langMap[sourceLang] || sourceLang;
+                    systemPrompt = `당신은 OCR 및 번역 전문가입니다. 주어진 이미지와 텍스트를 모두 참고하여, ${sourceLangName}(${sourceLang})에서 ${targetLangName}(${targetLang})로 내용을 정확하고 자연스럽게 번역하세요. 번역된 텍스트만 응답하세요. 다른 설명이나 추가적인 문장을 포함하지 마세요.`;
+                }
+            } else {
+                if (sourceLang === 'auto') {
+                    systemPrompt = `당신은 세계적인 수준의 번역가입니다. 주어진 텍스트의 원본 언어를 자동으로 감지하고, 이 텍스트를 정확하고 자연스럽게 ${targetLangName}(${targetLang})로 번역하세요. 번역된 텍스트만 응답하세요. 다른 설명이나 추가적인 문장을 포함하지 마세요.`;
+                } else {
+                    const sourceLangName = langMap[sourceLang] || sourceLang;
+                    systemPrompt = `당신은 세계적인 수준의 번역가입니다. ${sourceLangName}(${sourceLang})에서 ${targetLangName}(${targetLang})로 다음 텍스트를 정확하고 자연스럽게 번역하세요. 번역된 텍스트만 응답하세요. 다른 설명이나 추가적인 문장을 포함하지 마세요.`;
+                }
+            }
+
+            const payload = {
+                contents: contents,
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+            };
+
+            try {
+                const result = await fetchWithBackoff(payload);
+                const translatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (translatedText) {
+                    outputDiv.textContent = translatedText;
+                    updateStatus("번역 완료!", false, false);
+                    saveHistory(sourceLang, targetLang, translatedText); // 성공 시 히스토리 저장
+                } else {
+                    throw new Error("번역 결과를 가져오는 데 실패했습니다.");
+                }
+
+            } catch (error) {
+                console.error("번역 오류:", error);
+                // API 키 관련 오류는 사용자에게 명확히 알림
+                if (error.message.includes("403")) {
+                     outputDiv.textContent = `번역 중 오류가 발생했습니다: API 키가 잘못되었거나 유효하지 않습니다. 새로운 키를 입력하고 저장해주세요.`;
+                } else {
+                     outputDiv.textContent = `번역 중 오류가 발생했습니다: ${error.message}`;
+                }
+                
+                updateStatus("번역 오류 발생. 콘솔을 확인하세요.", false, true);
+            }
+        }
+
+        // --- Event Listeners ---
+        
+        // 0. API 키 발급 페이지 이동 버튼 이벤트 (추가)
+        getApiKeyBtn.addEventListener('click', () => {
+            // Google AI Studio 키 관리 페이지로 이동
+            window.open('https://aistudio.google.com/app/apikey', '_blank');
+        });
+
+        // 1. API Key 저장 버튼 이벤트
+        saveApiKeyBtn.addEventListener('click', () => {
+            const newKey = apiKeyInput.value.trim();
+            if (newKey) {
+                localStorage.setItem('geminiApiKey', newKey);
+                userApiKey = newKey;
+                updateApiKeyStatus();
+            } else {
+                // 경고 창 대신 상태 메시지 업데이트
+                updateStatus("API 키를 입력해주세요.", false, true);
+            }
+        });
+        
+        // 2. 번역 버튼, 초기화 버튼, 히스토리 버튼 이벤트
+        translateBtn.addEventListener('click', translateText);
+        clearBtn.addEventListener('click', clearInput);
+        swapBtn.addEventListener('click', () => {
+             const source = sourceLangSelect.value;
+             const target = targetLangSelect.value;
+             // 자동 감지는 대상 언어가 될 수 없으므로, 소스가 'auto'가 아니어야 함.
+             if (source !== 'auto') {
+                 sourceLangSelect.value = target;
+                 targetLangSelect.value = source;
+                 checkLanguageSelection();
+             }
+        });
+        historyBtn.addEventListener('click', showHistory);
+
+        // 3. 히스토리 모달 관련 이벤트
+        closeHistoryBtn.addEventListener('click', () => {
+            historyModal.classList.add('hidden');
+            historyModal.classList.remove('flex');
+        });
+        clearHistoryBtn.addEventListener('click', () => {
+            translationHistory = [];
+            showHistory(); // 기록 삭제 후 모달 업데이트
+        });
+        
+        // 4. 입력 텍스트 영역 변경 이벤트
+        inputTextarea.addEventListener('input', checkLanguageSelection);
+        
+        // 5. 이미지 파일 선택 및 제거 이벤트
+        imageInput.addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                await processImage(file);
+            }
+        });
+        removeImageBtn.addEventListener('click', removeImage);
+        selectFileBtn.addEventListener('click', () => {
+             imageInput.click();
+        });
+
+        // 6. 이미지 붙여넣기 이벤트
+        inputTextarea.addEventListener('paste', handlePaste); 
+        
+        // 7. 언어 선택 변경 이벤트
+        sourceLangSelect.addEventListener('change', checkLanguageSelection);
+        targetLangSelect.addEventListener('change', checkLanguageSelection);
+        
+        // --- 초기화 로직 ---
+        function initializeApp() {
+            // API 키 섹션의 기본 상태를 hidden으로 설정
+            apiKeySection.classList.add('hidden');
+            updateApiKeyStatus(); // 환경 변수 여부에 따라 UI 결정
+            checkLanguageSelection();
+        }
+        
+        // 초기 상태 설정
+        initializeApp();
+
+    </script>
+</body>
+</html>
